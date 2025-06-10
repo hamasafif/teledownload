@@ -3,7 +3,7 @@ import time
 import asyncio
 from dotenv import load_dotenv
 from telethon.sync import TelegramClient
-from telethon.tl.types import DocumentAttributeVideo
+from telethon.tl.types import DocumentAttributeVideo, InputMessagesFilterVideo
 from tqdm import tqdm
 
 # Load konfigurasi dari .env
@@ -12,7 +12,7 @@ api_id = int(os.getenv("API_ID"))
 api_hash = os.getenv("API_HASH")
 session_name = os.getenv("SESSION_NAME", "anon")
 
-# Header
+# Header ASCII
 print("""
  $$$$$$$$\ $$$$$$$$\ $$\       $$$$$$$$\ $$$$$$$\   $$$$$$\  $$\      $$\ $$\   $$\ $$\       $$$$$$\   $$$$$$\  $$$$$$$\  
 \__$$  __|$$  _____|$$ |      $$  _____|$$  __$$\ $$  __$$\ $$ | $\  $$ |$$$\  $$ |$$ |     $$  __$$\ $$  __$$\ $$  __$$\ 
@@ -40,14 +40,28 @@ def pilih_folder():
         print("❌ Folder tidak valid.")
         return None
 
-# Update progress bar
+# Update progress bar dengan tambahan info seperti yang diinginkan
 def update_progress(downloaded, total, pbar, start_time):
     elapsed = time.time() - start_time
     percent = (downloaded / total) * 100 if total else 0
     pbar.update(percent - pbar.n)
+    
+    # Menghitung kecepatan dalam MB/s
     speed = downloaded / 1024 / 1024 / elapsed if elapsed > 0 else 0
-    pbar.set_postfix_str(f"Kecepatan: {speed:.2f} MB/s")
-
+    
+    # Estimasi waktu yang tersisa
+    if speed > 0:
+        eta = (total - downloaded) / (speed * 1024 * 1024)  # Estimasi waktu dalam detik
+        eta_minutes, eta_seconds = divmod(eta, 60)
+        eta_str = f"{int(eta_minutes)}m{int(eta_seconds)}s"
+    else:
+        eta_str = "Estimasi N/A"
+    
+    # Update progres bar dengan detail tambahan
+    pbar.set_postfix_str(
+        f"{downloaded / 1024 / 1024:.1f} MB/{total / 1024 / 1024:.1f} MB "
+        f"{speed:.2f} MB/s  {eta_str}"
+    )
 # Fungsi utama
 async def download_video():
     async with TelegramClient(session_name, api_id, api_hash) as client:
@@ -84,19 +98,24 @@ async def download_video():
         print("\n🔍 Mendeteksi video...")
         messages = []
         deteksi = 0
+        downloaded_ids = set()
 
-        async for msg in client.iter_messages(target, reverse=True):
+        async for msg in client.iter_messages(target, reverse=True, filter=InputMessagesFilterVideo):
             deteksi += 1
             if deteksi % 50 == 0:
-                print(f"  ↪ Memeriksa pesan ke-{deteksi}")
+                print(f"  ↪ Memeriksa media ke-{deteksi}")
 
             doc = msg.document
             if doc:
+                if doc.id in downloaded_ids:
+                    continue
+
                 for attr in doc.attributes:
                     if isinstance(attr, DocumentAttributeVideo):
                         duration = getattr(attr, 'duration', 0)
                         if min_duration == 0 or duration >= min_duration:
                             messages.append(msg)
+                            downloaded_ids.add(doc.id)
                         break
 
         total_video = len(messages)
